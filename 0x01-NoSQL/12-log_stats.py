@@ -2,7 +2,7 @@
 """Log stats"""
 
 import pymongo
-import MongoClient
+from pymongo import MongoClient
 
 
 def log_stats():
