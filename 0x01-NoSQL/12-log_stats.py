@@ -5,7 +5,7 @@ import pymongo
 import MongoClient
 
 
-def nginx_logs_stats():
+def log_stats():
     client = MongoClient('mongodb://localhost:27017/')
     db = client.logs
     collection = db.nginx
@@ -19,9 +19,8 @@ def nginx_logs_stats():
         count = collection.count_documents({"method": method})
         print(f"\tmethod {method}: {count}")
 
-    status_logs = collection.count_documents(
-        {"method": "GET", "path": "/status"})
+    status_logs = collection.count_documents({"method": "GET", "path": "/status"})
     print(f"{status_logs} status check")
 
 
-nginx_logs_stats()
+log_stats()
