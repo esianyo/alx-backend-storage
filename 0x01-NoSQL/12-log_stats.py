@@ -1,3 +1,9 @@
+#!/usr/bin/env python3
+"""Log stats"""
+
+import pymongo
+
+
 from pymongo import MongoClient
 
 def nginx_logs_stats():
