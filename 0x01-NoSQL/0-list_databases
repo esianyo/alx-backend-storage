@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
-# This script lists all databases in MongoDB
+// i have commented
 
-echo 'show dbs' | mongo
+show dbs
