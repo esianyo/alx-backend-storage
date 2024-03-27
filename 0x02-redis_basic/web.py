@@ -1,33 +1,29 @@
 import requests
-import redis
 import time
+from functools import wraps
 
 
-def cache_result(expires):
+CACHE = {}
+
+
+def cache_expiration(seconds):
     def decorator(func):
+        @wraps(func)
         def wrapper(url):
-            cache_key = f"count:{url}"
-            content = cache.get(cache_key)
-            if content is None:
-                content = func(url)
-                cache.set(cache_key, content, ex=expires)
-                cache.incr(cache_key)
+            if url in CACHE:
+                if time.time() - CACHE[url]['timestamp'] < seconds:
+                    CACHE[url]['count'] += 1
+                    return CACHE[url]['content']
+
+            content = func(url)
+            CACHE[url] = {'content': content,
+                          'timestamp': time.time(), 'count': 1}
             return content
         return wrapper
     return decorator
 
 
-cache = redis.Redis()
-
-
-@cache_result(expires=10)
+@cache_expiration(10)
 def get_page(url):
     response = requests.get(url)
     return response.text
-
-
-if __name__ == '__main__':
-    url = "http://slowwly.robertomurray.co.uk/delay/1000/url/http://www.example.com"
-    print(get_page(url))
-    time.sleep(5)  # Wait for 5 seconds
-    print(get_page(url))
