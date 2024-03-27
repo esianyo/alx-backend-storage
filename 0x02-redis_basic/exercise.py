@@ -1,86 +1,150 @@
 #!/usr/bin/env python3
+
 """
-Main file
+This module provides a Cache class for storing and retrieving data using Redis.
 """
+
 import redis
 import uuid
-from typing import Union, Callable
-from functools import wraps
+import functools
+from typing import Callable, Optional
 
 
 class Cache:
+    """
+    Cache class for storing and retrieving data using Redis.
+    """
+
     def __init__(self):
         """
-        Cache class to interact with Redis
+        Initializes the Cache object and connects to Redis.
         """
         self._redis = redis.Redis()
         self._redis.flushdb()
 
-    def count_calls(self, method: Callable) -> Callable:
+    def store(self, data) -> str:
         """
-        Decorator to count the number of times a method is called.
-        """
-        @wraps(method)
-        def wrapper(*args, **kwargs):
-            key = method.__qualname__
-            self._redis.incr(key)
-            return method(*args, **kwargs)
-        return wrapper
+        Stores the given data in Redis and returns the generated key.
 
-    @count_calls
-    def store(self, data: Union[str, bytes, int, float]) -> str:
-        """
-        Store the input data in Redis using a random key
-        and return the key.
+        Args:
+            data: The data to be stored.
+
+        Returns:
+            The generated key under which the data is stored.
         """
         key = str(uuid.uuid4())
         self._redis.set(key, data)
         return key
 
-    def get(self, key: str, fn: Callable = None) -> Union[str,
-                                                          bytes, int, None]:
+    def get(self, key: str, fn: Optional[Callable] = None):
         """
-        Retrieve the data from Redis using the provided key.
-        If an optional conversion function (fn) is provided,
-        apply the function to convert the data before returning.
-        """
-        data = self._redis.get(key)
-        if data is not None and fn is not None:
-            data = fn(data)
-        return data
+        Retrieves the data associated with the given key from Redis.
 
-    def get_str(self, key: str) -> Union[str, None]:
-        """
-        Retrieve the data from Redis using the provided key
-        and convert it to a string before returning.
-        """
-        return self.get(key, fn=lambda d: d.decode("utf-8"))
+        Args:
+            key: The key to retrieve the data for.
+            fn: Optional function to apply to the retrieved data.
 
-    def get_int(self, key: str) -> Union[int, None]:
+        Returns:
+            The retrieved data, optionally transformed by the given function.
         """
-        Retrieve the data from Redis using the provided key
-        and convert it to an integer before returning.
+        value = self._redis.get(key)
+        if value is None:
+            return None
+        if fn is not None:
+            return fn(value)
+        return value
+
+    def get_str(self, key: str):
         """
-        return self.get(key, fn=int)
+        Retrieves the string data associated with the given key from Redis.
 
-    def replay(self, method: Callable):
+        Args:
+            key: The key to retrieve the data for.
+
+        Returns:
+            The retrieved string data.
         """
-        Display the history of calls for a particular method.
+        return self.get(key, fn=lambda x: x.decode('utf-8'))
+
+    def get_int(self, key: str):
         """
-        key = method.__qualname__
-        calls = self._redis.lrange(key, 0, -1)
-        num_calls = len(calls)
-        print(f"{key} was called {num_calls} times:")
-        for call in calls:
-            inputs, output = self._redis.hmget(call, "inputs", "output")
-            inputs = eval(inputs)
-            print(f"{key}{inputs} -> {output}")
+        Retrieves the integer data associated with the given key from Redis.
 
+        Args:
+            key: The key to retrieve the data for.
 
-if __name__ == '__main__':
-    cache = Cache()
+        Returns:
+            The retrieved integer data.
+        """
+        return self.get(key, fn=lambda x: int(x))
 
-    cache.store("foo")
-    cache.store("bar")
-    cache.store(42)
-    cache.replay(cache.store)
+    def count_calls(method):
+        """
+        Decorator that counts the number of times a method is called.
+
+        Args:
+            method: The method to be decorated.
+
+        Returns:
+            The decorated method.
+        """
+        @functools.wraps(method)
+        def wrapper(self, *args, **kwargs):
+            count_key = f"count:{method.__qualname__}"
+            self._redis.incr(count_key)
+            return method(self, *args, **kwargs)
+        return wrapper
+
+    def call_history(method):
+        """
+        Decorator that records the inputs and outputs of a method.
+
+        Args:
+            method: The method to be decorated.
+
+        Returns:
+            The decorated method.
+        """
+        @functools.wraps(method)
+        def wrapper(self, *args, **kwargs):
+            inputs_key = f"{method.__qualname__}:inputs"
+            outputs_key = f"{method.__qualname__}:outputs"
+            self._redis.rpush(inputs_key, str(args))
+            output = method(self, *args, **kwargs)
+            self._redis.rpush(outputs_key, output)
+            return output
+        return wrapper
+
+    @count_calls
+    @call_history
+    def store(self, data) -> str:
+        """
+        Stores the given data in Redis, counts the method call,
+        and records the history.
+
+        Args:
+            data: The data to be stored.
+
+        Returns:
+            The generated key under which the data is stored.
+        """
+        key = str(uuid.uuid4())
+        self._redis.set(key, data)
+        return key
+
+    def retrieve_list(self, method_name: str):
+        """
+        Retrieves the list of inputs and outputs for a method from Redis.
+
+        Args:
+            method_name: The name of the method.
+
+        Returns:
+            A list of tuples containing the inputs and outputs.
+        """
+        inputs_key = f"{method_name}:inputs"
+        outputs_key = f"{method_name}:outputs"
+        inputs = self._redis.lrange(inputs_key, 0, -1)
+        outputs = self._redis.lrange(outputs_key, 0, -1)
+        return [(input.decode('utf-8'), output.decode('utf-8'))
+                for input, output in zip(inputs, outputs)]
