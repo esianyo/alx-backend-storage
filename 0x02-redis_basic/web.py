@@ -1,29 +1,43 @@
+#!/usr/bin/env python3
+"""
+get_page functionimplementation
+"""
+
+
+import redis
 import requests
-import time
 from functools import wraps
 
-
-CACHE = {}
-
-
-def cache_expiration(seconds):
-    def decorator(func):
-        @wraps(func)
-        def wrapper(url):
-            if url in CACHE:
-                if time.time() - CACHE[url]['timestamp'] < seconds:
-                    CACHE[url]['count'] += 1
-                    return CACHE[url]['content']
-
-            content = func(url)
-            CACHE[url] = {'content': content,
-                          'timestamp': time.time(), 'count': 1}
-            return content
-        return wrapper
-    return decorator
+r = redis.Redis()
 
 
-@cache_expiration(10)
-def get_page(url):
-    response = requests.get(url)
-    return response.text
+def url_access_count(method):
+    """decorator for get_page function"""
+    @wraps(method)
+    def wrapper(url):
+        """wrapper function"""
+        key = "cached:" + url
+        cached_value = r.get(key)
+        if cached_value:
+            return cached_value.decode("utf-8")
+
+            # Get new content and update cache
+        key_count = "count:" + url
+        html_content = method(url)
+
+        r.incr(key_count)
+        r.set(key, html_content, ex=10)
+        r.expire(key, 10)
+        return html_content
+    return wrapper
+
+
+@url_access_count
+def get_page(url: str) -> str:
+    """obtain the HTML content of a particular"""
+    results = requests.get(url)
+    return results.text
+
+
+if __name__ == "__main__":
+    get_page('http://slowwly.robertomurray.co.uk')
